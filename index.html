@@ -1,1 +1,1621 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark h-full bg-slate-950 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APM 4.0 - Diagnóstico Preditivo & Horímetro Digital</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        cyber: {
+                            950: '#060911',
+                            900: '#0d1322',
+                            800: '#172036',
+                            700: '#263454',
+                            accent: '#06b6d4',
+                            emerald: '#10b981',
+                            amber: '#f59e0b',
+                            rose: '#ef4444',
+                            purple: '#8b5cf6'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Consolas', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Chart.js for real-time telemetry -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0d1322;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #263454;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #06b6d4;
+        }
+        
+        .glow-cyan {
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.25);
+        }
+        .glow-emerald {
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.25);
+        }
+        .glow-rose {
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
+        }
+        .glow-amber {
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.25);
+        }
 
+        .lcd-display {
+            background: #020617;
+            box-shadow: inset 0 0 12px rgba(0,0,0,0.8);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+        }
+
+        .scanline {
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(6, 182, 212, 0.04) 50%,
+                rgba(6, 182, 212, 0.04)
+            );
+            background-size: 100% 4px;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col font-sans bg-slate-950 text-slate-100 antialiased overflow-x-hidden selection:bg-cyan-500 selection:text-slate-950">
+
+    <!-- Navigation Header -->
+    <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50 px-4 py-2.5 shadow-xl">
+        <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+            
+            <!-- Branding & Live Indicator -->
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 via-blue-600 to-indigo-600 flex items-center justify-center text-slate-950 font-black text-xl shadow-lg shadow-cyan-500/20">
+                    <i class="fa-solid fa-stopwatch-20"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="font-bold text-lg text-slate-100 tracking-tight">APM 4.0 Industrial</h1>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">Horímetro & Telemetria</span>
+                    </div>
+                    <p class="text-xs text-slate-400 flex items-center gap-1.5">
+                        <span id="conn-ping" class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                        <span id="conn-status" class="text-emerald-400 font-medium">Conectado (IoT Gateway 100Hz)</span>
+                        <span class="text-slate-600">|</span>
+                        <span id="live-clock" class="font-mono text-slate-400">00:00:00</span>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Simulation Controls & Time Warp -->
+            <div class="flex flex-wrap items-center gap-2 bg-slate-950/90 p-1.5 rounded-xl border border-slate-800">
+                <button id="btn-engine-toggle" onclick="toggleEngineState()" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-2 transition shadow">
+                    <i id="icon-engine" class="fa-solid fa-power-off"></i>
+                    <span id="lbl-engine">LIGAR MÁQUINA</span>
+                </button>
+
+                <div class="flex items-center bg-slate-900 rounded-lg p-0.5 border border-slate-800">
+                    <span class="text-[10px] text-slate-400 uppercase font-bold px-2">Vel. Tempo:</span>
+                    <button onclick="setHorimetroSpeed(1)" id="warp-1" class="px-2 py-1 text-xs rounded-md font-mono bg-cyan-500 text-slate-950 font-bold">1x</button>
+                    <button onclick="setHorimetroSpeed(10)" id="warp-10" class="px-2 py-1 text-xs rounded-md font-mono text-slate-400 hover:text-slate-100">10x</button>
+                    <button onclick="setHorimetroSpeed(60)" id="warp-60" class="px-2 py-1 text-xs rounded-md font-mono text-slate-400 hover:text-slate-100">60x (1s=1m)</button>
+                    <button onclick="setHorimetroSpeed(3600)" id="warp-3600" class="px-2 py-1 text-xs rounded-md font-mono text-slate-400 hover:text-slate-100">3600x (1s=1h)</button>
+                </div>
+
+                <div class="relative">
+                    <select id="scenario-select" onchange="changeScenario(this.value)" class="bg-slate-900 text-xs font-medium text-cyan-300 border border-slate-700 rounded-lg px-3 py-1.5 focus:outline-none focus:border-cyan-500 cursor-pointer">
+                        <option value="normal">🟢 Operação Normal (100% Carga)</option>
+                        <option value="unbalance">🔴 Vibração Elevada (Desbalanceamento / ISO Zona C)</option>
+                        <option value="thermal">⚠️ Sobreaquecimento Crítico Mancal PT100</option>
+                        <option value="electrical">⚡ Sobrecarga Elétrica TC Bipartido</option>
+                        <option value="standby">⏸️ Modo Standby / Máquina Parada</option>
+                    </select>
+                </div>
+
+                <button onclick="openCustomAnomalyModal()" class="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 font-medium text-xs flex items-center gap-1.5 transition">
+                    <i class="fa-solid fa-bolt text-purple-400"></i>
+                    Simular Anomalia
+                </button>
+            </div>
+
+            <!-- Export, Print & Live Spreadsheet Integration Buttons -->
+            <div class="flex items-center gap-2">
+                <!-- NEW: Real-time Spreadsheet Sync Button -->
+                <button onclick="openSheetsModal()" id="btn-sheets-sync" class="px-3 py-1.5 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-500/40 font-medium text-xs flex items-center gap-1.5 transition">
+                    <i class="fa-solid fa-file-excel text-emerald-400"></i>
+                    <span id="lbl-sheets-status">Planilha Ao Vivo</span>
+                </button>
+
+                <button onclick="exportCSVLog()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-medium text-xs flex items-center gap-1.5 transition">
+                    <i class="fa-solid fa-file-csv text-emerald-400"></i>
+                    CSV
+                </button>
+                <button onclick="window.print()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-medium text-xs flex items-center gap-1.5 transition">
+                    <i class="fa-solid fa-print text-cyan-400"></i>
+                    Imprimir
+                </button>
+            </div>
+
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 space-y-4">
+
+        <!-- HORÍMETRO DIGITAL HERO PANEL -->
+        <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-2xl relative scanline overflow-hidden">
+            <div class="flex flex-col lg:flex-row items-stretch justify-between gap-6">
+                
+                <div class="flex-1 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-clock-rotate-left text-cyan-400 text-lg"></i>
+                            <h2 class="font-black text-slate-100 tracking-wide uppercase text-sm">Horímetro Digital Principal de Operação</h2>
+                        </div>
+                        <span id="horimetro-status-badge" class="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                            EM OPERAÇÃO (ACUMULANDO)
+                        </span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="lcd-display rounded-xl p-4 text-center relative overflow-hidden group">
+                            <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-1">Horas Totais Acumuladas (Acumulador Histórico)</span>
+                            <div id="horimetro-total-display" class="font-mono text-3xl sm:text-4xl font-black text-cyan-400 tracking-wider glow-cyan">
+                                001.248h 32m 14s
+                            </div>
+                            <div class="mt-2 flex items-center justify-between text-[11px] text-slate-400 font-mono border-t border-slate-800/80 pt-1.5">
+                                <span>Ciclos de Partida: <strong id="lbl-starts-count" class="text-slate-200">142</strong></span>
+                                <span>Carga Nominal: <strong id="lbl-load-percent" class="text-emerald-400">94.2%</strong></span>
+                            </div>
+                        </div>
+
+                        <div class="lcd-display rounded-xl p-4 text-center relative overflow-hidden group flex flex-col justify-between">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Horímetro Parcial (Turno / Batch)</span>
+                                <button onclick="resetTripHorimetro()" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-cyan-500/20 text-slate-300 hover:text-cyan-300 border border-slate-700 transition">
+                                    <i class="fa-solid fa-rotate-left"></i> Zerar
+                                </button>
+                            </div>
+                            <div id="horimetro-trip-display" class="font-mono text-2xl sm:text-3xl font-black text-emerald-400 tracking-wider">
+                                048h 12m 05s
+                            </div>
+                            <div class="mt-2 flex items-center justify-between text-[11px] text-slate-400 font-mono border-t border-slate-800/80 pt-1.5">
+                                <span>Consumo Estimado: <strong id="lbl-trip-kwh" class="text-amber-400">1.842 kWh</strong></span>
+                                <span>Horas em Vazio: <strong id="lbl-idle-hours" class="text-slate-300">2.4 h</strong></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Preventive Maintenance Milestones Right -->
+                <div class="w-full lg:w-96 bg-slate-950/80 border border-slate-800 rounded-xl p-4 flex flex-col justify-between space-y-3">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <span class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                            <i class="fa-solid fa-wrench text-amber-400"></i> Plano Preventivo por Horímetro
+                        </span>
+                        <span class="text-[10px] font-mono text-cyan-400">Revisões Programadas</span>
+                    </div>
+
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs font-mono">
+                            <span class="text-slate-300 font-medium">Lubrificação & Graxa (250h)</span>
+                            <span id="m1-hours-left" class="text-emerald-400 font-bold">Faltam 42h</span>
+                        </div>
+                        <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                            <div id="m1-progress-bar" class="bg-emerald-500 h-full transition-all duration-300" style="width: 83%;"></div>
+                        </div>
+                        <div class="flex justify-between text-[10px] text-slate-500">
+                            <span>Última: 1.000h</span>
+                            <button onclick="resetMaintenanceMilestone(1)" class="text-cyan-400 hover:underline">Registrar Serviço</button>
+                        </div>
+                    </div>
+
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs font-mono">
+                            <span class="text-slate-300 font-medium">Alinhamento & Balanc. (500h)</span>
+                            <span id="m2-hours-left" class="text-amber-400 font-bold">Faltam 12h</span>
+                        </div>
+                        <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                            <div id="m2-progress-bar" class="bg-amber-500 h-full transition-all duration-300" style="width: 97.6%;"></div>
+                        </div>
+                        <div class="flex justify-between text-[10px] text-slate-500">
+                            <span>Última: 1.000h</span>
+                            <button onclick="resetMaintenanceMilestone(2)" class="text-cyan-400 hover:underline">Registrar Serviço</button>
+                        </div>
+                    </div>
+
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs font-mono">
+                            <span class="text-slate-300 font-medium">Overhaul Geral do Motor (2.000h)</span>
+                            <span id="m3-hours-left" class="text-cyan-400 font-bold">Faltam 752h</span>
+                        </div>
+                        <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                            <div id="m3-progress-bar" class="bg-cyan-500 h-full transition-all duration-300" style="width: 62.4%;"></div>
+                        </div>
+                        <div class="flex justify-between text-[10px] text-slate-500">
+                            <span>Ciclo de Vida: 62%</span>
+                            <button onclick="resetMaintenanceMilestone(3)" class="text-cyan-400 hover:underline">Registrar Serviço</button>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+        </section>
+
+        <!-- EXECUTIVE KPI CARDS -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex items-center justify-between relative overflow-hidden group hover:border-slate-700 transition">
+                <div class="space-y-1">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Saúde Geral da Planta</span>
+                    <div class="flex items-baseline gap-2">
+                        <span id="kpi-health" class="text-3xl font-black text-emerald-400 font-mono">98.4%</span>
+                        <span id="kpi-health-status" class="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">ÓTIMO</span>
+                    </div>
+                    <p class="text-[11px] text-slate-500">Avaliando ISO + Temp + Corrente</p>
+                </div>
+                <div class="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-xl">
+                    <i class="fa-solid fa-heart-pulse"></i>
+                </div>
+                <div class="absolute bottom-0 left-0 right-0 h-1 bg-slate-800">
+                    <div id="kpi-health-bar" class="h-full bg-emerald-500 transition-all duration-500" style="width: 98.4%;"></div>
+                </div>
+            </div>
+
+            <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex items-center justify-between relative overflow-hidden group hover:border-slate-700 transition">
+                <div class="space-y-1">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Ativos em Alerta</span>
+                    <div class="flex items-baseline gap-2">
+                        <span id="kpi-alerts-count" class="text-3xl font-black text-slate-100 font-mono">0</span>
+                        <span class="text-xs text-slate-400">/ 6 Monitorados</span>
+                    </div>
+                    <p id="kpi-alerts-subtext" class="text-[11px] text-emerald-400 font-medium">Todos os sensores dentro da faixa</p>
+                </div>
+                <div id="kpi-alerts-icon" class="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 text-xl">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+            </div>
+
+            <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex items-center justify-between relative overflow-hidden group hover:border-slate-700 transition">
+                <div class="space-y-1">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">RUL Estimado (Vida Útil)</span>
+                    <div class="flex items-baseline gap-1">
+                        <span id="kpi-rul-hours" class="text-3xl font-black text-cyan-400 font-mono">> 2.400</span>
+                        <span class="text-xs text-slate-400 font-medium">horas</span>
+                    </div>
+                    <p class="text-[11px] text-slate-500">Calculado via regressão de tendência</p>
+                </div>
+                <div class="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 text-xl">
+                    <i class="fa-solid fa-hourglass-half"></i>
+                </div>
+            </div>
+
+            <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex items-center justify-between relative overflow-hidden group hover:border-slate-700 transition">
+                <div class="space-y-1">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Energia Acumulada</span>
+                    <div class="flex items-baseline gap-1">
+                        <span id="kpi-kwh-val" class="text-3xl font-black text-amber-400 font-mono">48.2</span>
+                        <span class="text-xs text-slate-400 font-medium">kWh</span>
+                    </div>
+                    <p class="text-[11px] text-slate-500">FP Média: <span id="lbl-power-factor" class="text-slate-300 font-mono">0.92</span></p>
+                </div>
+                <div class="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 text-xl">
+                    <i class="fa-solid fa-bolt"></i>
+                </div>
+            </div>
+        </section>
+
+        <!-- CENTER GRID: DIGITAL TWIN & REAL-TIME CHARTS -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+            <div class="lg:col-span-8 space-y-4">
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 relative scanline overflow-hidden shadow-2xl">
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                        <div class="flex items-center gap-2">
+                            <span class="w-3 h-3 rounded-full bg-cyan-500 animate-pulse"></span>
+                            <h3 class="font-bold text-sm tracking-wide uppercase text-slate-200">Gêmeo Digital Dinâmico do Skid Motor-Bomba (Skid MB-01)</h3>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="flex items-center gap-1 text-slate-400">
+                                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Normal
+                            </span>
+                            <span class="flex items-center gap-1 text-slate-400">
+                                <span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Alerta
+                            </span>
+                            <span class="flex items-center gap-1 text-slate-400">
+                                <span class="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span> Crítico
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="relative w-full h-[320px] bg-slate-950 rounded-xl border border-slate-800/80 overflow-hidden flex items-center justify-center">
+                        <canvas id="digitalTwinCanvas" class="w-full h-full cursor-pointer"></canvas>
+
+                        <div class="absolute top-3 left-3 bg-slate-900/90 backdrop-blur border border-slate-800 rounded-lg p-2.5 text-[11px] font-mono space-y-1 shadow-lg">
+                            <div class="text-cyan-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                                <i class="fa-solid fa-cube"></i> Ativo: Motor Trifásico 75kW
+                            </div>
+                            <div class="text-slate-300">Norma ISO 10816 Classe II</div>
+                            <div class="text-slate-400" id="hud-vibr">Vibração RMS: <span class="text-emerald-400">1.82 mm/s</span></div>
+                            <div class="text-slate-400" id="hud-temp">Temperatura Stator: <span class="text-emerald-400">42.5 °C</span></div>
+                            <div class="text-slate-400" id="hud-curr">Corrente L1: <span class="text-emerald-400">28.4 A</span></div>
+                            <div class="text-slate-400" id="hud-horimetro">Horímetro: <span class="text-cyan-400 font-bold" id="hud-horimetro-val">1.248,5 h</span></div>
+                        </div>
+
+                        <div class="absolute bottom-3 right-3 bg-slate-900/90 backdrop-blur border border-slate-800 rounded-lg p-2 text-right shadow-lg">
+                            <div class="text-[10px] uppercase tracking-wider text-purple-400 font-bold flex items-center justify-end gap-1">
+                                <i class="fa-solid fa-drone"></i> Insps. Drone HUD
+                            </div>
+                            <div id="drone-hud-status" class="text-xs font-mono text-emerald-400">Em rota de patrulha...</div>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-slate-500 mt-2 text-center">💡 Modelo interativo. Clique nos marcadores (<span class="text-cyan-400 font-bold">V1, T1, C1</span>) para inspecionar parâmetros físicos em tempo real.</p>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <h3 class="font-bold text-sm text-slate-200 flex items-center gap-2">
+                            <i class="fa-solid fa-chart-line text-cyan-400"></i> Telemetria Temporal & Curva de Horímetro
+                        </h3>
+                        <div class="flex gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                            <button onclick="switchChartTab('vibration')" id="tab-vibration" class="px-3 py-1 rounded text-xs font-medium bg-cyan-500 text-slate-950 font-bold">Vibração (ISO)</button>
+                            <button onclick="switchChartTab('temperature')" id="tab-temperature" class="px-3 py-1 rounded text-xs font-medium text-slate-400 hover:text-slate-200">Temperatura (PT100)</button>
+                            <button onclick="switchChartTab('electrical')" id="tab-electrical" class="px-3 py-1 rounded text-xs font-medium text-slate-400 hover:text-slate-200">Corrente (TC Bipartido)</button>
+                            <button onclick="switchChartTab('horimetro')" id="tab-horimetro" class="px-3 py-1 rounded text-xs font-medium text-slate-400 hover:text-slate-200">Horímetro Acumulado</button>
+                        </div>
+                    </div>
+
+                    <div class="h-64 w-full relative">
+                        <canvas id="telemetryChart"></canvas>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="lg:col-span-4 space-y-4">
+
+                <div class="bg-slate-900 border border-purple-500/30 rounded-2xl p-4 space-y-3 relative overflow-hidden shadow-xl">
+                    <div class="absolute -top-12 -right-12 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl pointer-events-none"></div>
+
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                        <div class="flex items-center gap-2">
+                            <div class="w-7 h-7 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400 text-sm">
+                                <i class="fa-solid fa-brain"></i>
+                            </div>
+                            <h3 class="font-bold text-sm text-slate-100">Diagnóstico Prescritivo IA</h3>
+                        </div>
+                        <span id="ai-confidence" class="text-xs font-mono px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">Confiança: 98.2%</span>
+                    </div>
+
+                    <div id="ai-diag-card" class="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-slate-400 font-medium">Análise Causa Raiz (RCA):</span>
+                            <span id="ai-diag-severity" class="text-[10px] font-bold px-2 py-0.5 rounded uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Sem Falhas</span>
+                        </div>
+                        <p id="ai-diag-title" class="font-bold text-sm text-slate-100">Operação Dentro dos Parâmetros ISO 10816</p>
+                        <p id="ai-diag-desc" class="text-xs text-slate-400 leading-relaxed">Frequências FFT nominais. Sem evidências de falhas de BPFO/BPFI no rolamento nem sobreaquecimento no PT100.</p>
+                    </div>
+
+                    <div class="space-y-1.5">
+                        <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                            <i class="fa-solid fa-clipboard-check text-cyan-400"></i> Ação Preditiva Recomendada:
+                        </span>
+                        <div id="ai-prescriptive-action" class="bg-slate-950/60 border border-slate-800 rounded-xl p-3 text-xs text-cyan-300 leading-relaxed font-mono">
+                            ✔ Manter plano regular de manutenção preditiva. Acompanhar horas acumuladas no horímetro para a próxima lubrificação.
+                        </div>
+                    </div>
+
+                    <div class="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                        <span class="text-slate-400">Estimativa do Falhamento:</span>
+                        <span id="ai-failure-time" class="font-mono text-emerald-400 font-bold">> 2.400 horas</span>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                    <h3 class="font-bold text-sm text-slate-200 flex items-center gap-2 border-b border-slate-800 pb-2.5">
+                        <i class="fa-solid fa-layer-group text-cyan-400"></i> Sensores & Ativos Monitorados (6)
+                    </h3>
+
+                    <div class="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+
+                        <div onclick="selectSensor('vibr')" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-cyan-500/50 cursor-pointer transition flex items-center justify-between group">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-400 flex items-center justify-center font-bold text-xs">V1</div>
+                                <div>
+                                    <div class="text-xs font-bold text-slate-200 group-hover:text-cyan-400 transition">Acelerômetro de Vibração</div>
+                                    <div class="text-[10px] text-slate-400">ISO 10816 • Triaxial (RMS mm/s)</div>
+                                </div>
+                            </div>
+                            <div class="text-right font-mono">
+                                <div id="card-val-vibr" class="text-xs font-bold text-slate-100">1.82 mm/s</div>
+                                <span id="card-badge-vibr" class="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 font-bold uppercase">OK</span>
+                            </div>
+                        </div>
+
+                        <div onclick="selectSensor('temp')" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-cyan-500/50 cursor-pointer transition flex items-center justify-between group">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold text-xs">T1</div>
+                                <div>
+                                    <div class="text-xs font-bold text-slate-200 group-hover:text-cyan-400 transition">PT 100 Temperatura</div>
+                                    <div class="text-[10px] text-slate-400">Termorresistência Stator & Mancal</div>
+                                </div>
+                            </div>
+                            <div class="text-right font-mono">
+                                <div id="card-val-temp" class="text-xs font-bold text-slate-100">42.5 °C</div>
+                                <span id="card-badge-temp" class="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 font-bold uppercase">OK</span>
+                            </div>
+                        </div>
+
+                        <div onclick="selectSensor('curr')" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-cyan-500/50 cursor-pointer transition flex items-center justify-between group">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center font-bold text-xs">C1</div>
+                                <div>
+                                    <div class="text-xs font-bold text-slate-200 group-hover:text-cyan-400 transition">TC Bipartido Corrente</div>
+                                    <div class="text-[10px] text-slate-400">Corrente RMS, FP % & Carga</div>
+                                </div>
+                            </div>
+                            <div class="text-right font-mono">
+                                <div id="card-val-curr" class="text-xs font-bold text-slate-100">28.4 A</div>
+                                <span id="card-badge-curr" class="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 font-bold uppercase">OK</span>
+                            </div>
+                        </div>
+
+                        <div onclick="selectSensor('hori')" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-cyan-500/50 cursor-pointer transition flex items-center justify-between group">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center font-bold text-xs">H1</div>
+                                <div>
+                                    <div class="text-xs font-bold text-slate-200 group-hover:text-cyan-400 transition">Horímetro Digital IoT</div>
+                                    <div class="text-[10px] text-slate-400">Contador de Horas & Ciclos</div>
+                                </div>
+                            </div>
+                            <div class="text-right font-mono">
+                                <div id="card-val-hori" class="text-xs font-bold text-cyan-400">1.248,5 h</div>
+                                <span id="card-badge-hori" class="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 font-bold uppercase">RODANDO</span>
+                            </div>
+                        </div>
+
+                        <div onclick="selectSensor('drone')" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-cyan-500/50 cursor-pointer transition flex items-center justify-between group">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center font-bold text-xs">D1</div>
+                                <div>
+                                    <div class="text-xs font-bold text-slate-200 group-hover:text-cyan-400 transition">Drone de Inspeção Térmica</div>
+                                    <div class="text-[10px] text-slate-400">Telemetria FLIR & Hotspots</div>
+                                </div>
+                            </div>
+                            <div class="text-right font-mono">
+                                <div id="card-val-drone" class="text-xs font-bold text-slate-100">Alt 12.4m</div>
+                                <span id="card-badge-drone" class="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 font-bold uppercase">ROTA OK</span>
+                            </div>
+                        </div>
+
+                        <div onclick="selectSensor('ugv')" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-cyan-500/50 cursor-pointer transition flex items-center justify-between group">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold text-xs">R1</div>
+                                <div>
+                                    <div class="text-xs font-bold text-slate-200 group-hover:text-cyan-400 transition">Robô Terrestre UGV LiDAR</div>
+                                    <div class="text-[10px] text-slate-400">Varredura 360° & Acústica</div>
+                                </div>
+                            </div>
+                            <div class="text-right font-mono">
+                                <div id="card-val-ugv" class="text-xs font-bold text-slate-100">62.0 dB</div>
+                                <span id="card-badge-ugv" class="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 font-bold uppercase">PATRULHA</span>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- SECONDARY ROW: ROBOTICS TELEMETRY & FLIR HUD -->
+        <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-drone text-purple-400"></i>
+                        <h3 class="font-bold text-sm text-slate-200">Drone Térmico Autônomo - Câmera FLIR Overlay</h3>
+                    </div>
+                    <span id="drone-battery" class="font-mono text-xs text-emerald-400 font-bold"><i class="fa-solid fa-battery-three-quarters"></i> Bateria: 88%</span>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div class="relative w-full h-44 bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center">
+                        <canvas id="droneThermalCanvas" class="w-full h-full"></canvas>
+                        <div class="absolute top-2 left-2 text-[10px] font-mono text-cyan-400 bg-slate-900/80 px-2 py-0.5 rounded">
+                            IR FLIR OVERLAY 320x240
+                        </div>
+                    </div>
+                    <div class="space-y-2 text-xs font-mono bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col justify-between">
+                        <div>
+                            <span class="text-slate-500 block">Altitude de Voo:</span>
+                            <span id="drone-alt-val" class="text-slate-200 font-bold text-sm">12.4 metros</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500 block">Hotspots Detectados:</span>
+                            <span id="drone-hotspots-val" class="text-emerald-400 font-bold text-sm">0 (Normal)</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500 block">Velocidade do Vento:</span>
+                            <span class="text-slate-200 font-bold">3.2 km/h (Sudoeste)</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500 block">Coordenadas Waypoint:</span>
+                            <span class="text-cyan-400">WP-04 [LAT -22.7, LON -47.6]</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-robot text-emerald-400"></i>
+                        <h3 class="font-bold text-sm text-slate-200">UGV - Robô Terrestre com LiDAR 360°</h3>
+                    </div>
+                    <span id="ugv-mode" class="font-mono text-xs text-cyan-400 font-bold">Modo Autônomo</span>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div class="relative w-full h-44 bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center">
+                        <canvas id="ugvLidarCanvas" class="w-full h-full"></canvas>
+                        <div class="absolute top-2 left-2 text-[10px] font-mono text-emerald-400 bg-slate-900/80 px-2 py-0.5 rounded">
+                            LIDAR SWEEP 360°
+                        </div>
+                    </div>
+                    <div class="space-y-2 text-xs font-mono bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col justify-between">
+                        <div>
+                            <span class="text-slate-500 block">Ruído Acústico Ambiente:</span>
+                            <span id="ugv-noise-val" class="text-slate-200 font-bold text-sm">62.4 dB(A)</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500 block">Distância do Obstáculo:</span>
+                            <span id="ugv-obstacle-val" class="text-emerald-400 font-bold text-sm">2.45 metros</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500 block">Torque de Tração:</span>
+                            <span class="text-slate-200 font-bold">14.2 Nm (Ok)</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500 block">Posição de Patrulha:</span>
+                            <span class="text-cyan-400">Galpão 02 - Corredor B</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- REAL-TIME LOG TABLE WITH HORÍMETRO STAMP -->
+        <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-list-check text-cyan-400"></i>
+                    <h3 class="font-bold text-sm text-slate-200">Registro Preditivo de Ocorrências com Leitura do Horímetro</h3>
+                </div>
+                
+                <div class="flex items-center gap-1.5 text-xs">
+                    <button onclick="filterLogs('ALL')" id="flt-all" class="px-2.5 py-1 rounded bg-slate-800 text-slate-200 font-medium hover:bg-slate-700 border border-slate-700">Todos</button>
+                    <button onclick="filterLogs('WARN')" id="flt-warn" class="px-2.5 py-1 rounded bg-amber-500/10 text-amber-400 font-medium hover:bg-amber-500/20 border border-amber-500/30">Alertas</button>
+                    <button onclick="filterLogs('CRIT')" id="flt-crit" class="px-2.5 py-1 rounded bg-rose-500/10 text-rose-400 font-medium hover:bg-rose-500/20 border border-rose-500/30">Críticos</button>
+                    <button onclick="clearLogs()" class="px-2.5 py-1 rounded bg-slate-800 text-slate-400 hover:text-slate-200"><i class="fa-solid fa-trash"></i> Limpar</button>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
+                <table class="w-full text-left border-collapse text-xs font-mono">
+                    <thead>
+                        <tr class="border-b border-slate-800 bg-slate-900/80 text-slate-400">
+                            <th class="p-2.5 font-semibold">HORA DO SISTEMA</th>
+                            <th class="p-2.5 font-semibold text-cyan-400">HORÍMETRO EXATO</th>
+                            <th class="p-2.5 font-semibold">ATIVO / SENSOR</th>
+                            <th class="p-2.5 font-semibold">GRAVIDADE</th>
+                            <th class="p-2.5 font-semibold">MÉTRICA / LIDO</th>
+                            <th class="p-2.5 font-semibold">DIAGNOSTICO / OCORRÊNCIA</th>
+                        </tr>
+                    </thead>
+                    <tbody id="log-table-body" class="divide-y divide-slate-800/60 text-slate-300">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- NEW MODAL: REAL-TIME SPREADSHEET CONFIGURATION -->
+    <div id="modal-sheets" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl relative">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="font-bold text-slate-100 flex items-center gap-2 text-sm">
+                    <i class="fa-solid fa-file-excel text-emerald-400"></i> Configurar Sincronização em Tempo Real da Planilha
+                </h3>
+                <button onclick="closeSheetsModal()" class="text-slate-400 hover:text-slate-200">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block text-slate-300 mb-1 font-medium">URL da Aplicação Web do Google Apps Script:</label>
+                    <input id="sheets-url-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200 font-mono text-[11px] focus:outline-none focus:border-emerald-500">
+                </div>
+
+                <div class="flex items-center gap-2 pt-1">
+                    <input type="checkbox" id="sheets-auto-sync" class="rounded bg-slate-950 border-slate-800 text-emerald-500 focus:ring-0">
+                    <label for="sheets-auto-sync" class="text-slate-300 cursor-pointer">Enviar leituras de telemetria continuamente a cada 5 segundos</label>
+                </div>
+
+                <div id="sheets-status-msg" class="text-[11px] font-mono hidden p-2 rounded border"></div>
+
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                    <span class="text-xs font-bold text-emerald-400 block"><i class="fa-solid fa-code"></i> Script para a Planilha Google:</span>
+                    <p class="text-[11px] text-slate-400 leading-normal">Na sua Planilha Google, aceda a <b>Extensões > Apps Script</b>, cole o código do script e implemente como <b>Aplicação Web</b> (Acesso: <i>Qualquer pessoa / Anyone</i>).</p>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+                <button onclick="testSheetsConnection()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 font-medium text-xs flex items-center gap-1.5">
+                    <i class="fa-solid fa-paper-plane"></i> Testar Envio
+                </button>
+                <div class="flex gap-2">
+                    <button onclick="closeSheetsModal()" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs">Cancelar</button>
+                    <button onclick="saveSheetsConfig()" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs">Guardar Configuração</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Inject Anomaly -->
+    <div id="modal-anomaly" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="font-bold text-slate-100 flex items-center gap-2 text-sm">
+                    <i class="fa-solid fa-bolt text-purple-400"></i> Simular Injeção de Anomalia
+                </h3>
+                <button onclick="closeCustomAnomalyModal()" class="text-slate-400 hover:text-slate-200">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block text-slate-300 mb-1 font-medium">Selecione o Ativo Alvo:</label>
+                    <select id="inj-target" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none focus:border-cyan-500">
+                        <option value="vibr">Acelerômetro - Vibração RMS</option>
+                        <option value="temp">PT 100 - Elevação Térmica Mancal</option>
+                        <option value="curr">TC Bipartido - Desequilíbrio de Fase</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-slate-300 mb-1 font-medium">Severidade:</label>
+                    <select id="inj-severity" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none focus:border-cyan-500">
+                        <option value="WARN">🟡 Alerta Amarelo (ISO B/C)</option>
+                        <option value="CRIT">🔴 Falha Crítica (Shutdown Preventivo)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-slate-300 mb-1 font-medium">Descrição / Causa Simulação:</label>
+                    <input id="inj-desc" type="text" placeholder="Ex: Carga desbalanceada no acoplamento" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none focus:border-cyan-500">
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                <button onclick="closeCustomAnomalyModal()" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs">Cancelar</button>
+                <button onclick="applyCustomAnomaly()" class="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-medium text-xs">Injetar Anomalia</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Detailed Sensor View -->
+    <div id="modal-sensor-detail" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 id="modal-sensor-title" class="font-bold text-slate-100 flex items-center gap-2 text-sm">
+                    <i class="fa-solid fa-circle-info text-cyan-400"></i> Detalhes TÉCNICOS
+                </h3>
+                <button onclick="closeSensorModal()" class="text-slate-400 hover:text-slate-200">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div id="modal-sensor-content" class="space-y-3 text-xs text-slate-300 font-mono">
+            </div>
+
+            <div class="flex justify-end pt-2 border-t border-slate-800">
+                <button onclick="closeSensorModal()" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-xs">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Engine JavaScript -->
+    <script>
+        // System Application State
+        const state = {
+            engineRunning: true,
+            horimetroSpeed: 1, 
+            scenario: 'normal',
+            activeChartTab: 'vibration',
+            filterSeverity: 'ALL',
+
+            // Realtime Spreadsheet Sync State
+            sheetsWebhookUrl: localStorage.getItem('apm_sheets_url') || '',
+            autoSyncSheets: localStorage.getItem('apm_sheets_active') === 'true',
+            lastSyncTick: 0,
+
+            // Horímetro Core Digital Counters (in seconds)
+            horimetroTotalSec: (1248 * 3600) + (32 * 60) + 14, 
+            horimetroTripSec: (48 * 3600) + (12 * 60) + 5,      
+            startsCount: 142,
+            idleSeconds: 8640, 
+            
+            // Maintenance Milestone Thresholds (in hours)
+            m1Interval: 250,   
+            m2Interval: 500,   
+            m3Interval: 2000,  
+
+            m1LastServicedHours: 1000,
+            m2LastServicedHours: 1000,
+            m3LastServicedHours: 0,
+
+            // Telemetry Realtime Metrics
+            telemetry: {
+                vibration: 1.82,     
+                temperature: 42.5,   
+                current: 28.4,       
+                powerFactor: 0.92,   
+                totalKWh: 1842.0,    
+                
+                droneBattery: 88,
+                droneAlt: 12.4,
+                droneHotspots: 0,
+                
+                ugvNoise: 62.4,
+                ugvObstacle: 2.45,
+                
+                healthIndex: 98.4,
+                rulHours: 2400
+            },
+
+            history: {
+                timestamps: [],
+                vibration: [],
+                temperature: [],
+                current: [],
+                horimetro: []
+            },
+
+            logs: []
+        };
+
+        let chartInstance = null;
+        let simInterval = null;
+
+        window.addEventListener('load', () => {
+            initClock();
+            initChart();
+            initCanvases();
+            startEngineLoop();
+            updateSheetsUIStatus();
+
+            addLog('Horímetro H1', 'INFO', `Leitura Horímetro: ${formatHorimetroShort(state.horimetroTotalSec)}`, 'APM 4.0 conectado. Sincronização em tempo real pronta.');
+        });
+
+        function initClock() {
+            setInterval(() => {
+                const now = new Date();
+                document.getElementById('live-clock').innerText = now.toLocaleTimeString('pt-BR');
+            }, 1000);
+        }
+
+        function formatHorimetroDigital(totalSec) {
+            const h = Math.floor(totalSec / 3600);
+            const m = Math.floor((totalSec % 3600) / 60);
+            const s = Math.floor(totalSec % 60);
+            
+            const hStr = String(h).padStart(3, '0');
+            const mStr = String(m).padStart(2, '0');
+            const sStr = String(s).padStart(2, '0');
+            
+            return `${hStr}h ${mStr}m ${sStr}s`;
+        }
+
+        function formatHorimetroShort(totalSec) {
+            const h = (totalSec / 3600).toFixed(1);
+            return `${h} h`;
+        }
+
+        /* SPREADSHEET REAL-TIME SYNC LOGIC */
+        function sendToSpreadsheet(payload) {
+            if (!state.sheetsWebhookUrl) return;
+
+            const dataToSend = {
+                timestamp: new Date().toLocaleTimeString('pt-BR'),
+                horimetroTotal: formatHorimetroShort(state.horimetroTotalSec),
+                horimetroTrip: formatHorimetroShort(state.horimetroTripSec),
+                vibration: state.telemetry.vibration.toFixed(2),
+                temperature: state.telemetry.temperature.toFixed(1),
+                current: state.telemetry.current.toFixed(1),
+                totalKWh: state.telemetry.totalKWh.toFixed(1),
+                healthIndex: state.telemetry.healthIndex.toFixed(1) + '%',
+                ...payload
+            };
+
+            fetch(state.sheetsWebhookUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(dataToSend)
+            }).then(() => {
+                const statusLbl = document.getElementById('lbl-sheets-status');
+                if (statusLbl) {
+                    statusLbl.innerText = 'Ao Vivo (Sincronizado)';
+                }
+            }).catch(err => {
+                console.error('Erro ao enviar dados para a planilha:', err);
+            });
+        }
+
+        function openSheetsModal() {
+            document.getElementById('sheets-url-input').value = state.sheetsWebhookUrl;
+            document.getElementById('sheets-auto-sync').checked = state.autoSyncSheets;
+            document.getElementById('modal-sheets').classList.remove('hidden');
+        }
+
+        function closeSheetsModal() {
+            document.getElementById('modal-sheets').classList.add('hidden');
+        }
+
+        function saveSheetsConfig() {
+            state.sheetsWebhookUrl = document.getElementById('sheets-url-input').value.trim();
+            state.autoSyncSheets = document.getElementById('sheets-auto-sync').checked;
+
+            localStorage.setItem('apm_sheets_url', state.sheetsWebhookUrl);
+            localStorage.setItem('apm_sheets_active', state.autoSyncSheets);
+
+            updateSheetsUIStatus();
+            closeSheetsModal();
+
+            if (state.sheetsWebhookUrl) {
+                sendToSpreadsheet({ asset: 'SISTEMA APM', severity: 'INFO', message: 'Conexão em Tempo Real Estabelecida com Sucesso.' });
+            }
+        }
+
+        function testSheetsConnection() {
+            const testUrl = document.getElementById('sheets-url-input').value.trim();
+            const msgBox = document.getElementById('sheets-status-msg');
+
+            if (!testUrl) {
+                msgBox.className = 'text-[11px] font-mono p-2 rounded border bg-rose-500/20 text-rose-300 border-rose-500/30';
+                msgBox.innerText = 'Por favor, insira o URL do Google Apps Script.';
+                msgBox.classList.remove('hidden');
+                return;
+            }
+
+            msgBox.className = 'text-[11px] font-mono p-2 rounded border bg-cyan-500/20 text-cyan-300 border-cyan-500/30';
+            msgBox.innerText = 'A enviar sinal de teste para a planilha...';
+            msgBox.classList.remove('hidden');
+
+            fetch(testUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    timestamp: new Date().toLocaleTimeString('pt-BR'),
+                    horimetroTotal: formatHorimetroShort(state.horimetroTotalSec),
+                    asset: 'TESTE DE CONEXÃO',
+                    severity: 'INFO',
+                    message: 'Teste de envio direto do Simulador APM 4.0'
+                })
+            }).then(() => {
+                msgBox.className = 'text-[11px] font-mono p-2 rounded border bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+                msgBox.innerText = 'Sinal enviado com sucesso! Verifique se a linha foi adicionada à sua Planilha Google.';
+            }).catch(err => {
+                msgBox.className = 'text-[11px] font-mono p-2 rounded border bg-rose-500/20 text-rose-300 border-rose-500/30';
+                msgBox.innerText = 'Erro ao conectar. Verifique se o URL está correto e se o Web App está público.';
+            });
+        }
+
+        function updateSheetsUIStatus() {
+            const btn = document.getElementById('btn-sheets-sync');
+            const statusLbl = document.getElementById('lbl-sheets-status');
+
+            if (state.sheetsWebhookUrl) {
+                btn.className = "px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs flex items-center gap-1.5 transition shadow glow-emerald";
+                statusLbl.innerText = state.autoSyncSheets ? "Planilha: Ao Vivo (5s)" : "Planilha: Conectada";
+            } else {
+                btn.className = "px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-medium text-xs flex items-center gap-1.5 transition";
+                statusLbl.innerText = "Planilha Ao Vivo";
+            }
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('telemetryChart').getContext('2d');
+            
+            const now = new Date();
+            for(let i = 20; i >= 0; i--) {
+                const t = new Date(now.getTime() - i * 2000);
+                state.history.timestamps.push(t.toLocaleTimeString('pt-BR'));
+                state.history.vibration.push(1.8 + Math.random() * 0.2);
+                state.history.temperature.push(42.0 + Math.random() * 0.8);
+                state.history.current.push(28.0 + Math.random() * 0.6);
+                state.history.horimetro.push((state.horimetroTotalSec / 3600) - (i * 0.01));
+            }
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: state.history.timestamps,
+                    datasets: [
+                        {
+                            label: 'Vibração RMS (mm/s)',
+                            data: state.history.vibration,
+                            borderColor: '#06b6d4',
+                            backgroundColor: 'rgba(6, 182, 212, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 2
+                        },
+                        {
+                            label: 'Limite ISO Alerta (4.5 mm/s)',
+                            data: Array(21).fill(4.5),
+                            borderColor: '#f59e0b',
+                            borderWidth: 1.5,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            fill: false
+                        },
+                        {
+                            label: 'Limite ISO Crítico (7.1 mm/s)',
+                            data: Array(21).fill(7.1),
+                            borderColor: '#ef4444',
+                            borderWidth: 1.5,
+                            borderDash: [3, 3],
+                            pointRadius: 0,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(51, 65, 85, 0.3)' },
+                            ticks: { color: '#94a3b8', font: { size: 10 } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(51, 65, 85, 0.3)' },
+                            ticks: { color: '#94a3b8', font: { size: 10 } }
+                        }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#cbd5e1', font: { size: 11 } } }
+                    }
+                }
+            });
+        }
+
+        function switchChartTab(type) {
+            state.activeChartTab = type;
+            
+            ['vibration', 'temperature', 'electrical', 'horimetro'].forEach(t => {
+                const btn = document.getElementById(`tab-${t}`);
+                if (t === type) {
+                    btn.className = "px-3 py-1 rounded text-xs font-medium bg-cyan-500 text-slate-950 font-bold";
+                } else {
+                    btn.className = "px-3 py-1 rounded text-xs font-medium text-slate-400 hover:text-slate-200";
+                }
+            });
+
+            updateChartDataset();
+        }
+
+        function updateChartDataset() {
+            if (!chartInstance) return;
+
+            if (state.activeChartTab === 'vibration') {
+                chartInstance.data.datasets[0].label = 'Vibração RMS (mm/s)';
+                chartInstance.data.datasets[0].data = state.history.vibration;
+                chartInstance.data.datasets[0].borderColor = '#06b6d4';
+                chartInstance.data.datasets[0].backgroundColor = 'rgba(6, 182, 212, 0.1)';
+                
+                chartInstance.data.datasets[1].label = 'Alerta ISO (4.5 mm/s)';
+                chartInstance.data.datasets[1].data = Array(state.history.timestamps.length).fill(4.5);
+                chartInstance.data.datasets[1].borderColor = '#f59e0b';
+
+                chartInstance.data.datasets[2].label = 'Crítico ISO (7.1 mm/s)';
+                chartInstance.data.datasets[2].data = Array(state.history.timestamps.length).fill(7.1);
+                chartInstance.data.datasets[2].borderColor = '#ef4444';
+            } else if (state.activeChartTab === 'temperature') {
+                chartInstance.data.datasets[0].label = 'Temperatura PT100 (°C)';
+                chartInstance.data.datasets[0].data = state.history.temperature;
+                chartInstance.data.datasets[0].borderColor = '#f59e0b';
+                chartInstance.data.datasets[0].backgroundColor = 'rgba(245, 158, 11, 0.1)';
+                
+                chartInstance.data.datasets[1].label = 'Alerta Temp (70.0 °C)';
+                chartInstance.data.datasets[1].data = Array(state.history.timestamps.length).fill(70.0);
+                chartInstance.data.datasets[1].borderColor = '#f59e0b';
+
+                chartInstance.data.datasets[2].label = 'Crítico Temp (88.0 °C)';
+                chartInstance.data.datasets[2].data = Array(state.history.timestamps.length).fill(88.0);
+                chartInstance.data.datasets[2].borderColor = '#ef4444';
+            } else if (state.activeChartTab === 'electrical') {
+                chartInstance.data.datasets[0].label = 'Corrente L1 (A)';
+                chartInstance.data.datasets[0].data = state.history.current;
+                chartInstance.data.datasets[0].borderColor = '#3b82f6';
+                chartInstance.data.datasets[0].backgroundColor = 'rgba(59, 130, 246, 0.1)';
+                
+                chartInstance.data.datasets[1].label = 'Carga Nominal (38.0 A)';
+                chartInstance.data.datasets[1].data = Array(state.history.timestamps.length).fill(38.0);
+                chartInstance.data.datasets[1].borderColor = '#f59e0b';
+
+                chartInstance.data.datasets[2].label = 'Sobrecarga (48.0 A)';
+                chartInstance.data.datasets[2].data = Array(state.history.timestamps.length).fill(48.0);
+                chartInstance.data.datasets[2].borderColor = '#ef4444';
+            } else if (state.activeChartTab === 'horimetro') {
+                chartInstance.data.datasets[0].label = 'Horas Operacionais Acumuladas (h)';
+                chartInstance.data.datasets[0].data = state.history.horimetro;
+                chartInstance.data.datasets[0].borderColor = '#10b981';
+                chartInstance.data.datasets[0].backgroundColor = 'rgba(16, 185, 129, 0.1)';
+                
+                chartInstance.data.datasets[1].label = 'Próxima Lubrificação (250h)';
+                const nextM1 = Math.ceil(state.horimetroTotalSec / 3600 / 250) * 250;
+                chartInstance.data.datasets[1].data = Array(state.history.timestamps.length).fill(nextM1);
+                chartInstance.data.datasets[1].borderColor = '#f59e0b';
+
+                chartInstance.data.datasets[2].label = 'Próximo Alinhamento (500h)';
+                const nextM2 = Math.ceil(state.horimetroTotalSec / 3600 / 500) * 500;
+                chartInstance.data.datasets[2].data = Array(state.history.timestamps.length).fill(nextM2);
+                chartInstance.data.datasets[2].borderColor = '#06b6d4';
+            }
+
+            chartInstance.update();
+        }
+
+        function startEngineLoop() {
+            if (simInterval) clearInterval(simInterval);
+
+            simInterval = setInterval(() => {
+                
+                if (state.engineRunning && state.scenario !== 'standby') {
+                    const deltaSec = 1 * state.horimetroSpeed;
+                    
+                    state.horimetroTotalSec += deltaSec;
+                    state.horimetroTripSec += deltaSec;
+
+                    const kw = (380 * state.telemetry.current * 1.732 * state.telemetry.powerFactor) / 1000;
+                    state.telemetry.totalKWh += (kw * (deltaSec / 3600));
+                } else if (state.scenario === 'standby') {
+                    state.idleSeconds += (1 * state.horimetroSpeed);
+                }
+
+                const t = state.telemetry;
+                const noise = (Math.random() - 0.5);
+
+                switch(state.scenario) {
+                    case 'normal':
+                        t.vibration = Math.max(1.2, Math.min(2.5, t.vibration + noise * 0.08));
+                        t.temperature = Math.max(38.0, Math.min(48.0, t.temperature + noise * 0.1));
+                        t.current = Math.max(26.0, Math.min(31.0, t.current + noise * 0.2));
+                        t.healthIndex = Math.min(100, Math.max(95, t.healthIndex + 0.1));
+                        t.rulHours = 2400;
+                        break;
+
+                    case 'unbalance':
+                        t.vibration = Math.min(9.2, t.vibration + 0.2 * (state.horimetroSpeed > 10 ? 2 : 1));
+                        t.temperature = Math.min(72.0, t.temperature + 0.1);
+                        t.healthIndex = Math.max(30, t.healthIndex - 0.5);
+                        t.rulHours = Math.max(18, Math.floor(t.rulHours * 0.9));
+                        if (t.vibration > 4.5 && Math.random() > 0.8) {
+                            addLog('Acelerômetro V1', 'WARN', `Vibração RMS ${t.vibration.toFixed(2)} mm/s`, 'Nível ISO 10816 em Alerta. Desbalanceamento no acoplamento.');
+                        }
+                        break;
+
+                    case 'thermal':
+                        t.temperature = Math.min(96.0, t.temperature + 0.6 * (state.horimetroSpeed > 10 ? 2 : 1));
+                        t.vibration = Math.min(4.8, t.vibration + 0.05);
+                        t.healthIndex = Math.max(22, t.healthIndex - 0.8);
+                        t.rulHours = Math.max(6, Math.floor(t.rulHours * 0.8));
+                        if (t.temperature > 88 && Math.random() > 0.8) {
+                            addLog('PT 100 T1', 'CRIT', `Temperatura ${t.temperature.toFixed(1)} °C`, 'Sobreaquecimento no mancal! Risco de fundição de gaxeta.');
+                        }
+                        break;
+
+                    case 'electrical':
+                        t.current = Math.min(52.0, t.current + 0.8);
+                        t.powerFactor = 0.74;
+                        t.healthIndex = Math.max(40, t.healthIndex - 0.4);
+                        if (t.current > 38 && Math.random() > 0.8) {
+                            addLog('TC Bipartido C1', 'WARN', `Corrente L1 ${t.current.toFixed(1)} A`, 'Sobrecarga de 135% em relação à corrente nominal.');
+                        }
+                        break;
+
+                    case 'standby':
+                        t.vibration = 0.1;
+                        t.temperature = Math.max(25.0, t.temperature - 0.3);
+                        t.current = 0.0;
+                        break;
+                }
+
+                // Automatic Realtime Spreadsheet Telemetry Dispatch every 5 ticks
+                state.lastSyncTick++;
+                if (state.autoSyncSheets && state.sheetsWebhookUrl && state.lastSyncTick % 5 === 0) {
+                    sendToSpreadsheet({
+                        asset: 'Skid MB-01',
+                        severity: 'INFO',
+                        message: `Cenário: ${state.scenario.toUpperCase()}`
+                    });
+                }
+
+                updateUI();
+
+                const timeStr = new Date().toLocaleTimeString('pt-BR');
+                state.history.timestamps.push(timeStr);
+                state.history.vibration.push(t.vibration);
+                state.history.temperature.push(t.temperature);
+                state.history.current.push(t.current);
+                state.history.horimetro.push(state.horimetroTotalSec / 3600);
+
+                if (state.history.timestamps.length > 25) {
+                    state.history.timestamps.shift();
+                    state.history.vibration.shift();
+                    state.history.temperature.shift();
+                    state.history.current.shift();
+                    state.history.horimetro.shift();
+                }
+
+                updateChartDataset();
+
+            }, 1000);
+        }
+
+        function updateUI() {
+            const t = state.telemetry;
+
+            document.getElementById('horimetro-total-display').innerText = formatHorimetroDigital(state.horimetroTotalSec);
+            document.getElementById('horimetro-trip-display').innerText = formatHorimetroDigital(state.horimetroTripSec);
+            document.getElementById('hud-horimetro-val').innerText = `${(state.horimetroTotalSec / 3600).toFixed(1)} h`;
+            document.getElementById('card-val-hori').innerText = `${(state.horimetroTotalSec / 3600).toFixed(1)} h`;
+
+            const hBadge = document.getElementById('horimetro-status-badge');
+            const cardBadgeHori = document.getElementById('card-badge-hori');
+            if (state.engineRunning && state.scenario !== 'standby') {
+                hBadge.className = 'px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5';
+                hBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> EM OPERAÇÃO (ACUMULANDO)';
+                cardBadgeHori.className = 'text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 font-bold uppercase';
+                cardBadgeHori.innerText = 'RODANDO';
+            } else {
+                hBadge.className = 'px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center gap-1.5';
+                hBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400"></span> STANDBY / PARADO';
+                cardBadgeHori.className = 'text-[9px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 font-bold uppercase';
+                cardBadgeHori.innerText = 'PARADO';
+            }
+
+            const currHours = state.horimetroTotalSec / 3600;
+            
+            const m1Elapsed = (currHours - state.m1LastServicedHours) % state.m1Interval;
+            const m1Left = Math.max(0, state.m1Interval - m1Elapsed);
+            const m1Pct = Math.min(100, (m1Elapsed / state.m1Interval) * 100);
+            document.getElementById('m1-hours-left').innerText = m1Left === 0 ? 'REVISÃO VENCIDA!' : `Faltam ${m1Left.toFixed(0)}h`;
+            document.getElementById('m1-progress-bar').style.width = `${m1Pct}%`;
+            document.getElementById('m1-progress-bar').className = m1Left < 20 ? 'bg-rose-500 h-full transition-all' : 'bg-emerald-500 h-full transition-all';
+
+            const m2Elapsed = (currHours - state.m2LastServicedHours) % state.m2Interval;
+            const m2Left = Math.max(0, state.m2Interval - m2Elapsed);
+            const m2Pct = Math.min(100, (m2Elapsed / state.m2Interval) * 100);
+            document.getElementById('m2-hours-left').innerText = m2Left === 0 ? 'REVISÃO VENCIDA!' : `Faltam ${m2Left.toFixed(0)}h`;
+            document.getElementById('m2-progress-bar').style.width = `${m2Pct}%`;
+
+            const m3Elapsed = (currHours - state.m3LastServicedHours) % state.m3Interval;
+            const m3Left = Math.max(0, state.m3Interval - m3Elapsed);
+            const m3Pct = Math.min(100, (m3Elapsed / state.m3Interval) * 100);
+            document.getElementById('m3-hours-left').innerText = `Faltam ${m3Left.toFixed(0)}h`;
+            document.getElementById('m3-progress-bar').style.width = `${m3Pct}%`;
+
+            document.getElementById('kpi-health').innerText = `${t.healthIndex.toFixed(1)}%`;
+            document.getElementById('kpi-health-bar').style.width = `${t.healthIndex}%`;
+            document.getElementById('kpi-kwh-val').innerText = `${t.totalKWh.toFixed(1)}`;
+            document.getElementById('lbl-trip-kwh').innerText = `${t.totalKWh.toFixed(1)} kWh`;
+            document.getElementById('lbl-idle-hours').innerText = `${(state.idleSeconds / 3600).toFixed(1)} h`;
+            document.getElementById('lbl-starts-count').innerText = state.startsCount;
+
+            document.getElementById('hud-vibr').innerHTML = `Vibração RMS: <span class="${t.vibration > 4.5 ? 'text-amber-400 font-bold' : 'text-emerald-400'}">${t.vibration.toFixed(2)} mm/s</span>`;
+            document.getElementById('hud-temp').innerHTML = `Temperatura Stator: <span class="${t.temperature > 70 ? 'text-rose-400 font-bold' : 'text-emerald-400'}">${t.temperature.toFixed(1)} °C</span>`;
+            document.getElementById('hud-curr').innerHTML = `Corrente L1: <span class="${t.current > 38 ? 'text-amber-400 font-bold' : 'text-emerald-400'}">${t.current.toFixed(1)} A</span>`;
+
+            document.getElementById('card-val-vibr').innerText = `${t.vibration.toFixed(2)} mm/s`;
+            document.getElementById('card-val-temp').innerText = `${t.temperature.toFixed(1)} °C`;
+            document.getElementById('card-val-curr').innerText = `${t.current.toFixed(1)} A`;
+
+            evaluateAIDiagnostics();
+        }
+
+        function evaluateAIDiagnostics() {
+            const t = state.telemetry;
+            const diagTitle = document.getElementById('ai-diag-title');
+            const diagDesc = document.getElementById('ai-diag-desc');
+            const diagSev = document.getElementById('ai-diag-severity');
+            const prescr = document.getElementById('ai-prescriptive-action');
+            const failTime = document.getElementById('ai-failure-time');
+
+            if (t.vibration > 7.1) {
+                diagSev.innerText = 'FALHA CRÍTICA ISO D';
+                diagSev.className = 'text-[10px] font-bold px-2 py-0.5 rounded uppercase bg-rose-500/20 text-rose-400 border border-rose-500/30';
+                diagTitle.innerText = 'Desgaste Pista Externa Rolamento (BPFO)';
+                diagDesc.innerText = 'Espectro FFT indica desbalanceamento severo. Registro no Horímetro: ' + formatHorimetroShort(state.horimetroTotalSec);
+                prescr.innerHTML = '🚨 <b>AÇÃO URGENTE:</b> Parada imediata. Agendar substituição de rolamento antes do marco do horímetro de 1.500h.';
+                failTime.innerText = `${t.rulHours} horas`;
+                failTime.className = 'font-mono text-rose-400 font-bold';
+            } else if (t.temperature > 88) {
+                diagSev.innerText = 'SOBREAQUECIMENTO';
+                diagSev.className = 'text-[10px] font-bold px-2 py-0.5 rounded uppercase bg-rose-500/20 text-rose-400 border border-rose-500/30';
+                diagTitle.innerText = 'Elevação Térmica Crítica no Mancal';
+                diagDesc.innerText = 'PT 100 atingiu rampa de sobreelevação. Câmera FLIR confirma aquecimento estático.';
+                prescr.innerHTML = '⚠️ <b>AÇÃO RECOMENDADA:</b> Reduzir carga para 50%. Checar graxa de lubrificação do horímetro (250h).';
+                failTime.innerText = `${t.rulHours} horas`;
+                failTime.className = 'font-mono text-amber-400 font-bold';
+            } else {
+                diagSev.innerText = 'SEM FALHAS';
+                diagSev.className = 'text-[10px] font-bold px-2 py-0.5 rounded uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+                diagTitle.innerText = 'Operação Dentro dos Parâmetros ISO 10816';
+                diagDesc.innerText = 'Nenhuma anomalia detectada. Horímetro operando em cadência normal.';
+                prescr.innerHTML = '✔ Manter plano de manutenção por horímetro. Próxima lubrificação em ' + (250 - ((state.horimetroTotalSec/3600)%250)).toFixed(0) + ' horas.';
+                failTime.innerText = '> 2.400 horas';
+                failTime.className = 'font-mono text-emerald-400 font-bold';
+            }
+        }
+
+        function initCanvases() {
+            const dtCanvas = document.getElementById('digitalTwinCanvas');
+            const droneCanvas = document.getElementById('droneThermalCanvas');
+            const ugvCanvas = document.getElementById('ugvLidarCanvas');
+
+            function resizeCanvases() {
+                dtCanvas.width = dtCanvas.parentElement.clientWidth;
+                dtCanvas.height = dtCanvas.parentElement.clientHeight;
+                droneCanvas.width = droneCanvas.parentElement.clientWidth;
+                droneCanvas.height = droneCanvas.parentElement.clientHeight;
+                ugvCanvas.width = ugvCanvas.parentElement.clientWidth;
+                ugvCanvas.height = ugvCanvas.parentElement.clientHeight;
+            }
+
+            resizeCanvases();
+            window.addEventListener('resize', resizeCanvases);
+
+            let angle = 0;
+
+            function renderLoop() {
+                angle += (state.engineRunning && state.scenario !== 'standby') ? 0.08 : 0;
+
+                const ctx = dtCanvas.getContext('2d');
+                const w = dtCanvas.width;
+                const h = dtCanvas.height;
+                ctx.clearRect(0, 0, w, h);
+
+                ctx.strokeStyle = '#1e293b';
+                ctx.lineWidth = 1;
+                for (let x = 0; x < w; x += 30) {
+                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+                }
+                for (let y = 0; y < h; y += 30) {
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+                }
+
+                const cx = w / 2;
+                const cy = h / 2 + 10;
+
+                const vibrAmp = state.telemetry.vibration > 4.5 ? Math.sin(angle * 10) * (state.telemetry.vibration * 0.8) : 0;
+
+                ctx.fillStyle = '#334155';
+                ctx.beginPath();
+                ctx.roundRect(cx - 160, cy + 40, 320, 20, 6);
+                ctx.fill();
+
+                const vibrColor = state.telemetry.vibration > 7.1 ? '#ef4444' : (state.telemetry.vibration > 4.5 ? '#f59e0b' : '#06b6d4');
+
+                ctx.fillStyle = '#1e293b';
+                ctx.strokeStyle = vibrColor;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.roundRect(cx - 140, cy - 50 + vibrAmp, 120, 90, 12);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = '#94a3b8';
+                ctx.fillRect(cx - 20, cy - 8 + vibrAmp, 80, 16);
+
+                ctx.fillStyle = '#0f172a';
+                ctx.strokeStyle = '#3b82f6';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(cx + 80, cy - 5, 45, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                drawSensorPin(ctx, cx - 120, cy - 55 + vibrAmp, 'V1', vibrColor);
+                drawSensorPin(ctx, cx - 70, cy - 55 + vibrAmp, 'T1', state.telemetry.temperature > 70 ? '#ef4444' : '#f59e0b');
+                drawSensorPin(ctx, cx - 140, cy + 15 + vibrAmp, 'C1', state.telemetry.current > 38 ? '#ef4444' : '#3b82f6');
+
+                const dCtx = droneCanvas.getContext('2d');
+                const dw = droneCanvas.width;
+                const dh = droneCanvas.height;
+                dCtx.clearRect(0, 0, dw, dh);
+
+                const tGrad = dCtx.createRadialGradient(dw/2, dh/2, 5, dw/2, dh/2, dw/2);
+                tGrad.addColorStop(0, state.telemetry.temperature > 70 ? '#ef4444' : '#0284c7');
+                tGrad.addColorStop(1, '#0f172a');
+                dCtx.fillStyle = tGrad;
+                dCtx.fillRect(0, 0, dw, dh);
+
+                dCtx.strokeStyle = '#06b6d4';
+                dCtx.lineWidth = 1.5;
+                dCtx.beginPath();
+                dCtx.arc(dw/2, dh/2, 25, 0, Math.PI * 2);
+                dCtx.moveTo(dw/2 - 35, dh/2); dCtx.lineTo(dw/2 + 35, dh/2);
+                dCtx.moveTo(dw/2, dh/2 - 35); dCtx.lineTo(dw/2, dh/2 + 35);
+                dCtx.stroke();
+
+                const uCtx = ugvCanvas.getContext('2d');
+                const uw = ugvCanvas.width;
+                const uh = ugvCanvas.height;
+                uCtx.clearRect(0, 0, uw, uh);
+
+                uCtx.strokeStyle = '#059669';
+                for (let r = 15; r < uw / 2; r += 20) {
+                    uCtx.beginPath(); uCtx.arc(uw/2, uh/2, r, 0, Math.PI * 2); uCtx.stroke();
+                }
+
+                uCtx.strokeStyle = '#10b981';
+                uCtx.beginPath();
+                uCtx.moveTo(uw/2, uh/2);
+                uCtx.lineTo(uw/2 + Math.cos(angle * 2) * (uw / 2), uh/2 + Math.sin(angle * 2) * (uh / 2));
+                uCtx.stroke();
+
+                requestAnimationFrame(renderLoop);
+            }
+
+            renderLoop();
+        }
+
+        function drawSensorPin(ctx, x, y, code, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#0f172a';
+            ctx.font = 'bold 9px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(code, x, y);
+        }
+
+        function setHorimetroSpeed(spd) {
+            state.horimetroSpeed = spd;
+            ['1', '10', '60', '3600'].forEach(s => {
+                const btn = document.getElementById(`warp-${s}`);
+                if (parseInt(s) === spd) {
+                    btn.className = "px-2 py-1 text-xs rounded-md font-mono bg-cyan-500 text-slate-950 font-bold";
+                } else {
+                    btn.className = "px-2 py-1 text-xs rounded-md font-mono text-slate-400 hover:text-slate-100";
+                }
+            });
+            
+            addLog('Horímetro H1', 'INFO', `Acelerador: ${spd}x`, `Velocidade do tempo do horímetro alterada para ${spd}x.`);
+        }
+
+        function toggleEngineState() {
+            state.engineRunning = !state.engineRunning;
+            const btn = document.getElementById('btn-engine-toggle');
+            const lbl = document.getElementById('lbl-engine');
+
+            if (state.engineRunning) {
+                state.startsCount++;
+                state.scenario = 'normal';
+                btn.className = "px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-2 transition shadow";
+                lbl.innerText = "LIGAR MÁQUINA";
+                addLog('Comando CCM', 'INFO', 'Partida do Motor', 'Motor energizado. Horímetro iniciando contagem de horas.');
+            } else {
+                state.scenario = 'standby';
+                btn.className = "px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs flex items-center gap-2 transition shadow";
+                lbl.innerText = "DESLIGAR MÁQUINA";
+                addLog('Comando CCM', 'WARN', 'Parada do Motor', 'Motor desenergizado. Horímetro pausado.');
+            }
+            updateUI();
+        }
+
+        function resetTripHorimetro() {
+            state.horimetroTripSec = 0;
+            addLog('Horímetro H1', 'INFO', 'Reset Horímetro Parcial', 'Horímetro de turno zerado pelo operador.');
+            updateUI();
+        }
+
+        function resetMaintenanceMilestone(type) {
+            const curr = state.horimetroTotalSec / 3600;
+            if (type === 1) state.m1LastServicedHours = curr;
+            if (type === 2) state.m2LastServicedHours = curr;
+            if (type === 3) state.m3LastServicedHours = curr;
+
+            addLog('Preventiva', 'INFO', `Serviço M${type} Concluído`, `Ordem de Serviço encerrada no Horímetro ${curr.toFixed(1)}h.`);
+            updateUI();
+        }
+
+        function changeScenario(val) {
+            state.scenario = val;
+            addLog('SIMULAÇÃO', 'INFO', `Cenário Alterado: ${val.toUpperCase()}`, 'Condições de carga alteradas.');
+        }
+
+        function addLog(asset, severity, metric, message) {
+            const timestamp = new Date().toLocaleTimeString('pt-BR');
+            const horimetroStamp = formatHorimetroDigital(state.horimetroTotalSec);
+            
+            const logEntry = { timestamp, horimetroStamp, asset, severity, metric, message };
+            state.logs.unshift(logEntry);
+
+            if (state.logs.length > 50) state.logs.pop();
+
+            // Send Realtime Alarm/Event to Google Sheets
+            if (state.sheetsWebhookUrl) {
+                sendToSpreadsheet({
+                    asset: asset,
+                    severity: severity,
+                    message: `${metric} - ${message}`
+                });
+            }
+
+            renderLogs();
+        }
+
+        function renderLogs() {
+            const tbody = document.getElementById('log-table-body');
+            tbody.innerHTML = '';
+
+            const filtered = state.logs.filter(l => {
+                if (state.filterSeverity === 'ALL') return true;
+                return l.severity === state.filterSeverity;
+            });
+
+            filtered.forEach(log => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-900/50 transition";
+
+                let badgeClass = 'bg-slate-800 text-slate-300';
+                if (log.severity === 'WARN') badgeClass = 'bg-amber-500/20 text-amber-400 border border-amber-500/30';
+                if (log.severity === 'CRIT') badgeClass = 'bg-rose-500/20 text-rose-400 border border-rose-500/30';
+                if (log.severity === 'INFO') badgeClass = 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30';
+
+                tr.innerHTML = `
+                    <td class="p-2.5 text-slate-400">${log.timestamp}</td>
+                    <td class="p-2.5 text-cyan-400 font-bold">${log.horimetroStamp}</td>
+                    <td class="p-2.5 font-bold text-slate-200">${log.asset}</td>
+                    <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${badgeClass}">${log.severity}</span></td>
+                    <td class="p-2.5 text-slate-200">${log.metric}</td>
+                    <td class="p-2.5 text-slate-300">${log.message}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function filterLogs(sev) {
+            state.filterSeverity = sev;
+            renderLogs();
+        }
+
+        function clearLogs() {
+            state.logs = [];
+            renderLogs();
+        }
+
+        function openCustomAnomalyModal() {
+            document.getElementById('modal-anomaly').classList.remove('hidden');
+        }
+
+        function closeCustomAnomalyModal() {
+            document.getElementById('modal-anomaly').classList.add('hidden');
+        }
+
+        function applyCustomAnomaly() {
+            const target = document.getElementById('inj-target').value;
+            const sev = document.getElementById('inj-severity').value;
+            const desc = document.getElementById('inj-desc').value || 'Anomalia manual induzida pelo operador';
+
+            if (target === 'vibr') {
+                state.telemetry.vibration = sev === 'CRIT' ? 8.9 : 5.1;
+                addLog('Acelerômetro V1', sev, `Vibração RMS ${state.telemetry.vibration} mm/s`, desc);
+            } else if (target === 'temp') {
+                state.telemetry.temperature = sev === 'CRIT' ? 94.0 : 76.5;
+                addLog('PT 100 T1', sev, `Temperatura ${state.telemetry.temperature} °C`, desc);
+            } else if (target === 'curr') {
+                state.telemetry.current = sev === 'CRIT' ? 52.0 : 41.5;
+                addLog('TC Bipartido C1', sev, `Corrente ${state.telemetry.current} A`, desc);
+            }
+
+            closeCustomAnomalyModal();
+            updateUI();
+        }
+
+        function selectSensor(key) {
+            const modal = document.getElementById('modal-sensor-detail');
+            const title = document.getElementById('modal-sensor-title');
+            const content = document.getElementById('modal-sensor-content');
+
+            modal.classList.remove('hidden');
+
+            if (key === 'hori') {
+                title.innerHTML = `<i class="fa-solid fa-stopwatch text-cyan-400"></i> Detalhes TÉCNICOS: Horímetro Digital IoT`;
+                content.innerHTML = `
+                    <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1">
+                        <div><b>Acumulador Total:</b> <span class="text-cyan-400">${formatHorimetroDigital(state.horimetroTotalSec)}</span></div>
+                        <div><b>Acumulador Parcial (Trip):</b> ${formatHorimetroDigital(state.horimetroTripSec)}</div>
+                        <div><b>Partidas Acumuladas:</b> ${state.startsCount} ciclos Start/Stop</div>
+                        <div><b>Horas em Standby/Vazio:</b> ${(state.idleSeconds/3600).toFixed(1)} h</div>
+                        <div><b>Precisão do Relógio RTC:</b> ±0.001 sec / dia</div>
+                    </div>
+                `;
+            } else if (key === 'vibr') {
+                title.innerHTML = `<i class="fa-solid fa-wave-square text-cyan-400"></i> Detalhes: Acelerômetro de Vibração`;
+                content.innerHTML = `
+                    <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1">
+                        <div><b>Sensor:</b> Piezoelétrico IEPE 100 mV/g</div>
+                        <div><b>Vibração RMS:</b> ${state.telemetry.vibration.toFixed(2)} mm/s</div>
+                        <div><b>Norma ISO 10816:</b> Classe II (Motor-Bomba Média)</div>
+                    </div>
+                `;
+            } else {
+                title.innerHTML = `<i class="fa-solid fa-microchip text-cyan-400"></i> Ativo Monitorado`;
+                content.innerHTML = `<div class="p-3 bg-slate-950 rounded-lg">Dados em sincronia com o Horímetro Industrial via MQTT/Modbus/Spreadsheet Webhook.</div>`;
+            }
+        }
+
+        function closeSensorModal() {
+            document.getElementById('modal-sensor-detail').classList.add('hidden');
+        }
+
+        function exportCSVLog() {
+            if (state.logs.length === 0) {
+                alert('Não há registros de logs para exportar.');
+                return;
+            }
+
+            let csv = 'Timestamp;Horimetro;Ativo;Gravidade;Metrica;Mensagem\n';
+            state.logs.forEach(l => {
+                csv += `"${l.timestamp}";"${l.horimetroStamp}";"${l.asset}";"${l.severity}";"${l.metric}";"${l.message}"\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Relatorio_Preditivo_Horimetro_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+        }
+    </script>
+</body>
+</html>
